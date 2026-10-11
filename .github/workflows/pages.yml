@@ -1,0 +1,51 @@
+name: CI/CD Pages
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege by default; the deploy job widens it explicitly.
+permissions:
+  contents: read
+
+jobs:
+  # NOTE: this job name is the required status check in the ruleset.
+  # Renaming it without updating the ruleset blocks every PR.
+  validate-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate
+        run: bash scripts/validate.sh
+
+      - name: Build
+        run: bash scripts/build.sh
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: validate-and-build
+    # PRs stop after validate-and-build; only main (or manual run) deploys.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Serialize deploys; never cancel one mid-flight.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
